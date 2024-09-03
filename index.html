@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8"/>
+    <style>
+      body, html {
+        height: 100%;
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: #212832;
+        overflow: hidden;
+      }
+
+      .canvas-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+
+      .matter-canvas {
+        border: 2px solid #f9ffff;
+      }
+
+      .infinite-stars-overlay {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        background-image: url('./assets/infinite\ stars.gif');
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        min-height: 100vh;
+        opacity: 0;
+        transition: opacity 1s ease-in-out;
+        z-index: 0; /* keep behind matter.js canvas */
+      }
+    </style>
+  </head>
+  <body>
+    <div class="infinite-stars-overlay"></div>
+    <div class="canvas-container"></div>
+    
+    <script src="./node_modules/matter-js/build/matter.js"></script> <!-- physics -->
+    <script src="./node_modules/poly-decomp/build/decomp.js"></script> <!-- complex shapes -->
+    <script src="./node_modules/howler/dist/howler.js"></script> <!-- sound -->
+
+    <script>
+      // Code heavily inspired by matter.js demos: https://brm.io/matter-js/demo/
+      
+      // module aliases
+      var Engine = Matter.Engine,
+        Render = Matter.Render,
+        Runner = Matter.Runner,
+        Composites = Matter.Composites,
+        Events = Matter.Events,
+        Constraint = Matter.Constraint,
+        MouseConstraint = Matter.MouseConstraint,
+        Mouse = Matter.Mouse,
+        Body = Matter.Body,
+        Composite = Matter.Composite,
+        Bodies = Matter.Bodies,
+        Vector = Matter.Vector;
+
+      // create engine
+      var engine = Engine.create(),
+        world = engine.world;
+      
+      // create renderer
+      var render = Render.create({
+        element: document.querySelector('.canvas-container'),
+        engine: engine,
+        options: {
+          width: 800,
+          height: 600,
+          wireframes: false,
+          background: '#222831'
+        },
+        canvas: document.createElement('canvas')
+      });
+
+      render.canvas.className = 'matter-canvas'
+      Render.run(render);
+
+      // create runner
+      var runner = Runner.create();
+      Runner.run(runner, engine);
+
+      // group for collisionFilter
+      var group = Body.nextGroup(true)
+
+      // create bodies
+      const bucketVertices = Matter.Vertices.fromPath('105 21 57 51 42 114 42 174 75 237 135 255 195 252 195 198 138 201 102 177 90 132 99 87 135 69 198 69 198 21 159 21');
+
+      var bucketOne = Matter.Bodies.fromVertices(650, 400, bucketVertices, { density: 0.01, isStatic: false,
+        render: {
+          fillStyle: '#393E46',
+          strokeStyle: '#393E46',
+          lineWidth: 1
+        }
+      }, true);
+      Matter.Body.rotate(bucketOne, -1.55)
+
+      var bucketTwo = Matter.Bodies.fromVertices(140, 400, bucketVertices, { density: 0.01, isStatic: false, 
+        render: {
+          fillStyle: '#393E46',
+          strokeStyle: '#393E46',
+          lineWidth: 1
+        }
+      }, true);
+      Matter.Body.rotate(bucketTwo, -1.55)
+
+      var ground = Bodies.rectangle(395, 600, 815, 50, { isStatic: true, render: { fillStyle: '#060a19' } });
+      var scaleBeam = Bodies.rectangle(400, 50, 520, 20, { render: { fillStyle: '#222831', strokeStyle: '#f0f5f9', lineWidth: 2}, collisionFilter: { group: group } });
+      var sensor = Bodies.rectangle(395, 595, 815, 50, { isSensor: true, isStatic: true, render: { fillStyle: '#222831' } });
+
+      // add bodies
+      Composite.add(engine.world, [
+        sensor,
+        ground, 
+        bucketOne,
+        bucketTwo,
+        scaleBeam,
+        
+        Bodies.rectangle(400, 500, 20, 1000, { isStatic: true, collisionFilter: { group: group }, render: { fillStyle: '#222831', strokeStyle: '#f0f5f9', lineWidth: 2 } }),
+        Bodies.rectangle(400, 600, 800, 50.5, { isStatic: true, render: { fillStyle: '#222831', strokeStyle: '#f0f5f9', lineWidth: 2 } }),
+
+        // add constraints for buckets
+
+        // bucket one
+        Constraint.create({
+        bodyA: scaleBeam,
+        pointA: { x: 250, y: 0 },
+        pointB: { x: 90, y: -82 },
+        bodyB: bucketOne
+        }),
+
+        Constraint.create({
+        bodyA: scaleBeam,
+        pointA: { x: 250, y: 0 },
+        pointB: { x: -90 , y: -88 },
+        bodyB: bucketOne
+        }),
+
+        // bucket two
+        Constraint.create({
+        bodyA: scaleBeam,
+        pointA: { x: -250, y: 0 },
+        pointB: { x: -91, y: -88 },
+        bodyB: bucketTwo
+        }),
+
+        Constraint.create({
+        bodyA: scaleBeam,
+        pointA: { x: -250, y: 0 },
+        pointB: { x: 90, y: -82 },
+        bodyB: bucketTwo
+        }),
+
+        // add constraint for scale beam
+        Constraint.create({ 
+          bodyA: scaleBeam, 
+          pointB: Vector.clone(scaleBeam.position),
+          stiffness: 1,
+          length: 0
+        })
+      ]);
+
+      // add mouse control
+      var mouse = Mouse.create(render.canvas),
+        mouseConstraint = MouseConstraint.create(engine, {
+          mouse: mouse,
+          constraint: {
+            stiffness: 0.2,
+            render: {
+              visible: false
+            }
+          }
+      });
+
+      // add event for creating ball on click
+      Events.on(mouseConstraint, 'mousedown', function(event) {
+        randomNum = (Math.random() * (25 - 1 + 1) + 1) // get random number between 1 and 25 for ball size
+        var ball = Bodies.circle(mouse.position.x, mouse.position.y, randomNum, {render: {fillStyle: '#00ADB5'}}, 2)
+        Composite.add(engine.world, ball)
+      });
+
+      var infiniteStarsOverlay = document.querySelector('.infinite-stars-overlay');
+      
+      var song = new Howl({
+        src: './assets/OMORI\ OST\ -\ 004\ Spaces\ In-between.mp3'
+      });
+      
+      // add event for if scales unbalanced, then stop infinite star effect
+      Events.on(engine, 'collisionStart', function(event) {
+        if (
+          Matter.Collision.collides(bucketOne, sensor) !== null ||
+          Matter.Collision.collides(bucketTwo, sensor) !== null
+        ) {
+          infiniteStarsOverlay.style.opacity = 0;
+          if (song.playing()) {
+            song.fade(1, 0, 1000)
+            setTimeout(() => {
+              song.pause()
+            }, 1000);
+          }
+        }
+      });
+
+      // add event for if scales balanced, then start infinite star effect
+      Events.on(engine, 'collisionEnd', function(event) {
+        if (
+          Matter.Collision.collides(bucketOne, sensor) === null &&
+          Matter.Collision.collides(bucketTwo, sensor) === null
+        ) {
+          infiniteStarsOverlay.style.opacity = 1;
+          if (!song.playing()) {
+            song.play()
+            song.fade(0, 1, 1000);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
